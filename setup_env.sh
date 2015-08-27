@@ -1,53 +1,24 @@
 #!/bin/bash
 set -e
 
-if [ -x '/usr/bin/apt-get' ]; then
-    if ! $(git --version &>/dev/null) ; then
-        sudo -H apt-get -y install git
-    fi
-    if ! $(pip -v &>/dev/null); then
-        sudo -H apt-get -y install python-pip
-    fi
-elif [ -x '/usr/bin/yum' ]; then
-    if ! $(git --version &>/dev/null); then
-        sudo -H yum -y install git
-    fi
-    if ! $(pip -v &>/dev/null); then
-        sudo -H yum -y install python-pip
-    fi
-else
-    echo "ERROR: Supported package manager not found.  Supported: apt,yum"
-fi
+VENV=${INFRA_ANSIBLE_VENV:-"venv"}
+ANSIBLE_VERSION="e8452c864e57d39c703ff1317a70981600c23310"
 
-sudo -E pip install -r "$(dirname $0)/requirements.txt"
+virtualenv ${VENV}
+curl -O https://bootstrap.pypa.io/get-pip.py
+${VENV}/bin/python get-pip.py
+${VENV}/bin/pip install -r "$(dirname $0)/requirements.txt"
+${VENV}/bin/pip install git+https://github.com/ansible/ansible.git@${ANSIBLE_VERSION}
+# XXX: Only way to get the openstack.py inventory plugin
+rm -rf ansible
+git clone https://github.com/ansible/ansible.git
+pushd ansible
+git reset --hard ${ANSIBLE_VERSION}
+popd
 
-u=$(whoami)
-g=$(groups | awk '{print $1}')
-
-if [ ! -d /opt/stack ]; then
-    mkdir -p /opt/stack || (sudo mkdir -p /opt/stack)
-fi
-sudo -H chown -R $u:$g /opt/stack
-cd /opt/stack
-
-if [ ! -d ansible ]; then
-    git clone https://github.com/ansible/ansible.git --recursive
-else
-    cd ansible
-    git checkout devel
-    git pull --rebase
-    git submodule update --init --recursive
-    git fetch
-    # Temporary direct checkout of devel due to broken modules until
-    # the submodules pointers get updated in the core ansible repo.
-    cd lib/ansible/modules/core
-    git checkout devel
-fi
-
-echo
-echo "If your using this script directly, execute the"
-echo "following commands to update your shell."
-echo
-echo "source env-vars"
-echo "source /opt/stack/ansible/hacking/env-setup"
-echo
+echo ========================================================================
+echo If you have elected to provide cloud provider details via environment
+echo variables, source that file.  Otherwise, we assume you are managing that
+echo information with os-client-config and in that case, replace 'envvars' in
+echo your infra_config.yaml file with the name of a cloud provider you have
+echo ========================================================================
